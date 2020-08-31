@@ -35,16 +35,16 @@ use "dataset.dta"
 // From the codebook, below variables have missing values. 
 //I use Little's test (mcartest) to see if the below variables are missing completely at random. 
 preserve 
-use "dataset.dta"
-local var_mi_99 tobacco cigar alcohol wgain 
-local var_mi_other cigar6 alcohol drink herpes
+
+local var_mi_99 cigar alcohol wgain 
+local var_mi_other tobacco cigar6 alcohol drink herpes
 
 foreach var of varlist `var_mi_99'{
 	replace `var' =. if `var' == 99
 }
 
 foreach var of varlist `var_mi_other'{
-	replace `var' =. if 1 == inlist(1, cigar6==6, alcohol==9, drink5==5, herpes==8)
+	replace `var' =. if 1 == inlist(1, tobacco==9, cigar6==6, alcohol==9, drink5==5, herpes==8)
 }
 
 mcartest tobacco cigar cigar6 alcohol drink drink5 wgain herpes 
