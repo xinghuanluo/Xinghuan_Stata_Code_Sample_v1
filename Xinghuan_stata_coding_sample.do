@@ -1,21 +1,25 @@
 ********************************************************************
 // code_sample.do | By Xinghuan Luo (xinghuanluo@uchicago.edu)
-// Updated: August 3rd, 2020
 
 // This is a code sample extracted from my homework of econometrics class at harris. 
 
 // The questions in this homework are based heavily on the paper Almond et al. 2005. 
 // The goal of this assignment is to examine the research question: what is the causal 
 // effect of maternal smoking during pregnancy on infant birthweight and other infant health
-//  outcomes? The data for the problem set is an extract of all births from the 1993 National 
-//  Natality Detail Files for Pennsylvania.
+// outcomes? The data for the problem set is an extract of all births from the 1993 National 
+// Natality Detail Files for Pennsylvania. 
 
-// This code file has 2 parts: /
+// This code file has 4 parts: 
 // - Part 1 Initialization and Importing data
 // - Part 2 Data Checking
 // - Part 3 Estimating Propensity Score 
 // - Part 4 Analysis with Propensity Score
 
+// - Basically I first check the missing pattern of data and clean it. Then, I find that the covariates are unbalanced 
+//   between smoking and non-smoking group. Also because the dataset is not the result of random experiement, to control 
+//   for selection on observables, I use propensity score matching method. Finally, after estimating p-score, I use it 
+//   with three different ways, simply including p-score as covariate, weighting both group by p-score and diving whole
+//   population by p-score. 
 
 ************************Part 1 Initialization and Importing data***********************
 clear
@@ -31,30 +35,33 @@ use "dataset.dta"
 // From the codebook, below variables have missing values. 
 //I use Little's test (mcartest) to see if the below variables are missing completely at random. 
 preserve 
-use "dataset.dta",clear 
-replace tobacco=. if tobacco==9
-replace cigar=. if cigar==99
-replace cigar6=. if cigar6==6
-replace alcohol=. if alcohol==9
-replace drink=. if drink==99
-replace drink5=. if drink5==5
-replace wgain=. if wgain==99
-replace herpes=. if herpes==8
+use "dataset.dta"
+local var_mi_99 tobacco cigar alcohol wgain 
+local var_mi_other cigar6 alcohol drink herpes
+
+foreach var of varlist `var_mi_99'{
+	replace `var' =. if `var' == 99
+}
+
+foreach var of varlist `var_mi_other'{
+	replace `var' =. if 1 == inlist(1, cigar6==6, alcohol==9, drink5==5, herpes==8)
+}
+
 mcartest tobacco cigar cigar6 alcohol drink drink5 wgain herpes 
 
 // Drop variable with missing values.
 restore  
-drop if tobacco==9| cigar==99| cigar6==6| alcohol==9| drink==99| drink5==5| wgain==99|herpes==8
+drop if 1 == inlist(1, tobacco==9, cigar==99, cigar6==6, alcohol==9, drink==99, drink5==5, wgain==99, herpes==8) 
 
 ************************Part 2 Data Checking***********************
 
 // List a group of predetermiend variables as covariates
 local predetermined dmage mrace3 dmeduc dmar dfage dfeduc orfath cntocpop stresfip ormoth nprevist adequacy alcohol drink drink5 preterm pre4000 phyper monpre rectype anemia cardiac lung diabetes herpes chyper disllb isllb10 birmon stresfip pldel3 nlbnl dlivord dtotord totord9 weekday dgestat csex dplural 
 
-// To find if there is any selection bias, I do balance check of above predetermined variables between treatment and control group. 
+// To find if there is any selection bias, I do balance check of all variables between treatment and control group. 
 // If the pregnant women smokes, then tobacco = 1(treatment). Otherwise, tobacco = 0(control). 
 replace tobacco = 0 if tobacco == 2
-balancetable tobacco `predetermined' using B_table.tex, pval oneline replace ctitles("No Smoking" "Smoking" "Difference")
+balancetable tobacco _all using B_table.tex, longtable pval oneline replace ctitles("No Smoking" "Smoking" "(i)Difference")
 
 // After I control the predermined variables, I simply estimate the impact of smoking on birth weight, one minute apgar score and five minute agpar score.
 estimates clear 
