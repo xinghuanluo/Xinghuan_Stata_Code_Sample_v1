@@ -1,0 +1,12 @@
+	(1)
+VARIABLES	dbrwt
+	
+tobacco_dummy	-287.0***
+	(4.410)
+Constant	-36.49
+	(120.0)
+	
+Observations	92,828
+R-squared	0.392
+Standard errors in parentheses	
+*** p<0.01, ** p<0.05, * p<0.1	
