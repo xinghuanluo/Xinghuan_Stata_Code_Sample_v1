@@ -27,7 +27,7 @@ cap log close
 set more off
 
 if inlist("`c(username)'", "lenovo" ) {
-	cd "D:\OneDrive - The University of Chicago\summer\RA Application\Xinghuan_Stata_Coding_Sample"
+	cd "D:\OneDrive - The University of Chicago\summer\RA Application\Github\Xinghuan_Stata_Coding_Sample"
 }
 
 use "dataset.dta"
@@ -44,7 +44,7 @@ foreach var of varlist `var_mi_99'{
 }
 
 foreach var of varlist `var_mi_other'{
-	replace `var' =. if 1 == inlist(1, tobacco==9, cigar6==6, alcohol==9, drink5==5, herpes==8)
+	replace `var' =. if inlist(1, tobacco==9, cigar6==6, alcohol==9, drink5==5, herpes==8)
 }
 
 mcartest tobacco cigar cigar6 alcohol drink drink5 wgain herpes 
