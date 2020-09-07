@@ -61,11 +61,11 @@ local predetermined dmage mrace3 dmeduc dmar dfage dfeduc orfath cntocpop stresf
 // To find if there is any selection bias, I do balance check of all variables between treatment and control group. 
 // If the pregnant women smokes, then tobacco = 1(treatment). Otherwise, tobacco = 0(control). 
 replace tobacco = 0 if tobacco == 2
-balancetable tobacco _all using B_table.tex, longtable pval oneline replace ctitles("No Smoking" "Smoking" "(i)Difference")
+balancetable tobacco _all using B_table.tex, longtable pval oneline replace ctitles("No Smoking" "Smoking" "Difference") // Use Iebaltab 
 
 // After I control the predermined variables, I simply estimate the impact of smoking on birth weight, one minute apgar score and five minute agpar score.
-estimates clear 
-local i = 1
+eststo clear 
+local i = 1 
 foreach var of varlist dbrwt omaps fmaps {
     eststo model_`i': qui reg `var' tobacco `predetermined', robust
     esttab model_`i' using model_`i'.tex, se keep(_cons tobacco ) replace label
@@ -80,7 +80,7 @@ logit tobacco `predetermined',vce(r)
 predict pscore_1
 
 // I only include predetermined covariates who are significant in the last logit regression
-local predetermined_sig stresfip rectype adequacy dmage mrace3 dmeduc dmar dfage dfeduc orfath ormoth nprevist alcohol drink5 preterm pre4000 phyper  isllb10 pldel3 dlivord dtotord totord9
+local predetermined_sig stresfip rectype adequacy dmage mrace3 dmeduc dmar dfage dfeduc orfath ormoth nprevist alcohol drink5 preterm pre4000 phyper isllb10 pldel3 dlivord dtotord totord9
 logit tobacco `predetermined_sig',vce(r)
 predict pscore_2
 
