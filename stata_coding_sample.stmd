@@ -1,0 +1,439 @@
+---
+title: Stata Code Sample [^1]
+author: Xinghuan Luo <xinghuanluo@uchicago.edu>
+date: Aug 28, 2020
+header-includes:
+  - \usepackage{multicol}
+  - \usepackage{graphicx}
+  - \usepackage{float}
+  - \usepackage{geometry}
+	 \geometry{
+	 a4paper,
+	 total={170mm,257mm},
+	 left=20mm,
+	 top=20mm,
+	 }
+---
+
+## Background
+
+[^1]: I finished this markdown file by `markstat`. The souce code is in my github repository here.
+
+This is a code sample extracted from my homework of econometrics class at harris.
+The questions in this homework are based heavily on the paper Almond et al. 2005.
+The goal of this assignment is to examine the research question: what is the causal
+effect of maternal smoking during pregnancy on infant birthweight and other infant health
+outcomes? The data for the problem set is an extract of all births from the 1993 National
+Natality Detail Files for Pennsylvania.
+
+This code file has 4 parts: \
+- Part 0 Initialization and Importing data\
+- Part 1 Data Checking\
+- Part 2 Estimating Propensity Score \
+- Part 3 Analysis with Propensity Score
+
+Basically I first checked the missing pattern of data and cleaned it. Then, I found that the covariates were 
+unbalanced between smoking and non-smoking group. Also because the dataset was not the result of random experiement, to control for selection on observables, I used propensity score matching method. Finally, after estimating p-score, I used it with three different ways: simply including p-score as covariate, weighting both group by p-score and diving whole population by p-score.
+
+## 0. Initialization and Importing data
+
+
+```{s}
+clear
+set more off
+local data "D:/OneDrive - The University of Chicago/2021 Fall/job searching/Urban Lab/code_sample/data"
+local output "D:/OneDrive - The University of Chicago/2021 Fall/job searching/Urban Lab/code_sample/output"
+use "`data'/dataset.dta"
+
+if inlist("`c(username)'", "lenovo" ) {
+	cd "D:/OneDrive - The University of Chicago/2021 Fall/job searching/Urban Lab/code_sample/output"
+}
+```
+
+From the codebook, below variables have missing values.
+I used Little's test (mcartest) to see if the below variables are missing completely at random.
+
+```{s}
+preserve
+
+local var_mi_99 cigar alcohol wgain
+local var_mi_other tobacco cigar6 alcohol drink herpes
+
+foreach var of varlist `var_mi_99'{
+	qui replace `var' =. if `var' == 99
+}
+
+foreach var of varlist `var_mi_other'{
+	qui replace `var' =. if inlist(1, tobacco==9, cigar6==6, alcohol==9, drink5==5, herpes==8)
+}
+
+mcartest tobacco cigar cigar6 alcohol drink drink5 wgain herpes
+restore
+
+// Drop variable with missing values.
+
+drop if 1 == inlist(1, tobacco==9, cigar==99, cigar6==6, alcohol==9, drink==99, drink5==5, wgain==99, herpes==8)
+```
+
+## 1. Data Checking
+
+List a group of predetermiend variables as covariates
+```{s}
+local predetermined mrace3 dmeduc dmar dfeduc orfath cntocpop stresfip ormoth nprevist adequacy alcohol drink drink5 preterm pre4000 phyper monpre rectype anemia cardiac lung diabetes herpes chyper disllb isllb10 birmon stresfip pldel3 nlbnl dlivord dtotord totord9 weekday dgestat csex dplural
+```
+
+### 1.1 Balancing Test
+To find if there is any selection bias, I did balance check of part of important variables between treatment and control group, because creating a balance table for all variables will make this sample too long. But, practically, I should do it for all variables. If the pregnant women smokes, then tobacco = 1(treatment). Otherwise, tobacco = 0(control).
+
+```{s}
+local predetermined_balance mrace3 dmeduc dmar dfeduc orfath cntocpop stresfip
+label define tobacco_lab 0 "non-smoking" 1 "smoking"
+label val tobacco tobacco_lab
+qui replace tobacco = 0 if tobacco == 2
+iebaltab `predetermined_balance', grpvar(tobacco) ///
+vce(robust) savetex("`output'/balance_test.tex") replace ///
+rowvarlabels pttest ftest fnoobs pftest
+```
+
+\begin{table}[H]
+\centering
+\caption{Balance Test of Predetermined Variables}
+\input{balance_test.tex}
+\end{table}
+
+
+### 1.2 Regression on Whether Smoking
+After I controlled the predermined variables, I simply estimated the impact of smoking on birth weight, one minute apgar score and five minute agpar score.
+
+```{s}
+eststo clear
+local i = 1
+foreach var of varlist dbrwt omaps fmaps {
+    eststo model_`i': qui reg `var' tobacco `predetermined', robust
+    local i = `i' + 1
+}
+esttab model_* using "`output'/smk_weight.tex", se keep(_cons tobacco ) replace label title(Simple Estimate of Impact of Smoking)
+```
+
+\begin{table}[H]
+\centering
+\caption{Regression on Whether Smoking}
+\input{smk_weight.tex}
+\end{table}
+
+### 1.3 Categorical Regression on Parent's Age
+I simply regressed infant weight on mother and father age controlling those predetermined variable
+
+```{s}
+recode dmage min/26 = 1 27/32 = 2 33/max = 3, gen(dmage_factor)
+recode dfage min/28 = 1 29/34 = 2 35/max = 3, gen(dfage_factor)
+label define dmage_lab 1 "below 26" 2 "27-32" 3 "above 33"
+label define dfage_lab 1 "below 28" 2 "29-34" 3 "above 35"
+label val dmage_factor dmage_lab
+label val dfage_factor dfage_lab
+label var dmage_factor "Factorial variable of mother age"
+label var dfage_factor "Factorial variable of father age"
+
+local outcome_weight dbrwt fmaps omaps
+forvalues j = 1/2 {
+	if `j' == 1 {
+		local idpdt_var dmage_factor
+	}
+	else if `j' == 2 {
+		local idpdt_var dfage_factor
+	}
+
+	local k = 1
+	foreach var of varlist `outcome_weight' {
+		qui reg `var ' i.`idpdt_var' `predetermined', robust
+		mat b_`k' = r(table)
+		mat b_`k' = b_`k'[1..2, 2..4]'
+		local lbl_var: var label `var'
+		mat colnames b_`k' = "`lbl_var'" "`lbl_var'_se"
+		local val_lbls
+		forvalues i = 2/3 {
+			local val_lbl: label(`idpdt_var') `i'
+			local val_lbls `" `val_lbls' "`val_lbl'" "'
+		}
+		local val_lbls `" `val_lbls' "The Constant" "'
+		mat rownames b_`k' = `val_lbls'
+		local k = `k' + 1
+	}
+	mat final_`j' = b_1
+	forvalues k = 2/3 {
+		mat final_`j' = final_`j', b_`k'
+	}
+}
+
+mat final_matrix = final_1\final_2
+mat list final_matrix
+```
+For the above matrix, the first three rows are categorical regression of birth weight and 
+five minute apgar score on mother's age group. "Below 26" group is omitted. The rest of rows are 
+categorical regression of same outcome variables on father's age group, "below 28" is omitted.  
+The first column is coefficient and the second column is the corresponding standerd error. 
+
+### 1.4 Bar Chart by Mother Age and Smoking Status
+I created a bar chart by mother age and whether smoking.
+
+```{s}
+preserve
+
+gen avg = .
+gen ci_low = .
+gen ci_high =.
+```
+
+I calculated means and confidence intervals
+```{s}
+qui: mean dbrwt, over(tobacco dmage_factor)
+matrix M = r(table)
+
+forvalues i = 1/6 {
+	if inrange(`i', 1, 3) == 1 {
+		qui replace avg = M[1, `i'] if tobacco == 0 & dmage_factor == `i'
+		qui replace ci_low = M[5, `i'] if tobacco == 0 & dmage_factor == `i'
+		qui replace ci_high = M[6, `i'] if tobacco == 0 & dmage_factor == `i'
+	}
+	else if inrange(`i', 4, 6) == 1 {
+		qui replace avg = M[1, `i'] if tobacco == 1 & dmage_factor == `i' - 3
+		qui replace ci_low = M[5, `i'] if tobacco == 1 & dmage_factor == `i' - 3
+		qui replace ci_high = M[6, `i'] if tobacco == 1 & dmage_factor == `i' - 3
+	}
+}
+```
+
+I counted observations
+```{s}
+forvalues i = 1/6 {
+	if inrange(`i', 1, 3) == 1 {
+		count if tobacco == 0 & dmage_factor == `i'
+	}
+	else if inrange(`i', 4, 6) == 1 {
+		count if tobacco == 1 & dmage_factor == `i' - 3
+	}
+
+	local `i'N = r(N)
+
+}
+```
+
+I plotted the bar chart
+```{s}
+gen tobacco_age = dmage_factor if tobacco == 0
+qui replace tobacco_age = dmage_factor + 4 if tobacco == 1
+twoway (bar avg tobacco_age if dmage_factor == 1, fcolor(dkorange) ///
+		fintensity(inten70) lcolor(white) barw(0.7)) ///
+		(bar avg tobacco_age if dmage_factor == 2, fcolor(dkorange) ///
+		fintensity(inten50) lcolor(white) barw(0.7)) ///
+		(bar avg tobacco_age if dmage_factor == 3, fcolor(dkorange) ///
+		fintensity(inten30) lcolor(white) barw(0.7)) ///
+		(rcap ci_low ci_high tobacco_age, lcolor(gs5)), ///
+		legend(row(1) order(1 "below 26" 2 "27-32" 3 "above 33" 4 "95% C.I.")) ///
+		xlabel(2 "non-smoking" 6 "smoking", noticks) xtitle("smoking status") ///
+		ytitle("Average Birthweight in grams", ///
+		margin(medium) size(medium)) ///
+		title("Average Birthweight by Smoking Status and Mother's Age Group", size(medium)) ///
+		note("Number of People: " ///
+			"below 26 non-smoking `1N', 27-32 non-smoking `2N',  above 33 non-smoking `3N'" ///
+			"below 26 smoking `4N', 27-32 smoking `5N',  above 33 smoking `6N'" )
+
+graph export "`output'/birthweight_by_age.png", replace
+restore
+```
+
+\begin{figure}[H]
+\centering
+\caption{This is a caption}
+\includegraphics[width=\textwidth]{birthweight_by_age.png}
+\end{figure}
+
+## 2. Estimating Propensity Score
+
+### 2.1 Creating Propensity Score
+To better control selection on observables, I used propensity score matching to find the treatment effect. I used logit specification to generate propensity score.
+
+```{s}
+qui logit tobacco `predetermined',vce(r)
+qui predict pscore_1
+```
+
+I only included predetermined covariates who were significant in the last logit regression
+```{s}
+local predetermined_sig stresfip rectype adequacy dmage mrace3 dmeduc dmar dfage dfeduc orfath ormoth nprevist alcohol drink5 preterm pre4000 phyper isllb10 pldel3 dlivord dtotord totord9
+qui logit tobacco `predetermined_sig',vce(r)
+qui predict pscore_2
+```
+
+To better compare the above two propensity scores, I calculated the correlation between those 2 propensity scores
+and simulated their density function by kdensity command
+```{s}
+corr(pscore_1 pscore_2)
+twoway (kdensity pscore_1) || (kdensity pscore_2),  xtitle("Propensity Score") legend(label(1 "Including All") label(2 "Including significant Only"))
+graph export "`output'/corr.png", replace
+```
+
+\begin{figure}[H]
+\centering
+\caption{Correlation of Two Different Propensity Scores}
+\includegraphics[width = \textwidth]{corr.png}
+\end{figure}
+
+### 2.2 Checking Common Support
+
+Generate common support
+```{s}
+cap drop common_support
+gen common_support = 1
+forvalues i = 1/2 {
+	su pscore_2 if tobacco == `i' - 1
+	qui replace common_support = 0 if inrange(pscore_2, r(min), r(max)) == 0
+}
+```
+
+histogram of propensity frequency
+```{s}
+su pscore_2 if common_support == 1
+local rhs = r(max)
+local lhs = r(min)
+
+histogram pscore_2, xline(`rhs', lcolor(black) lwidth(thin) lpattern(dash)) ///
+		  xline(`lhs', lcolor(black) lwidth(thin) lpattern(dash)) ///
+		  xlabel(0(0.1)1) ///
+		  ylabel(10 "10%" 20 "20%" 30 "30%", angle(0)) ///
+		  percent width(0.05) ///
+		  by (tobacco, row(2)) ///
+		  fcolor(dkorange%60) lcolor(white%0) ///
+		  xtitle("Propensity score", size(medsmall)) ///
+		  ytitle("Percent in Population", size(medsamll))
+
+graph export "`output'/histogram.png", replace
+
+drop if common_support == 0
+```
+
+\begin{figure}[H]
+\centering
+\caption{Distribution of Propensity Score in Population}
+\includegraphics[width = \textwidth]{histogram.png}
+\end{figure}
+
+
+## 3. Analysis with Propensity Score
+### 3.1 Plotting the Difference of Birth Weight by Propensity Score
+
+Generate infant birth weight difference graph by propensity score
+```{s}
+egen rank = rank(pscore_2), unique
+egen group = cut(rank), group(200)
+gen smk_weight =.
+gen non_smk_weight =.
+
+forvalues i = 1/200 {
+	local j = `i' - 1
+	qui count if group == `j' & tobacco == 0
+	qui sum dbrwt if group == `j' & tobacco == 0
+	qui replace smk_weight = r(sum) / r(N) if group == `j'
+
+	qui count if group == `j' & tobacco == 1
+	qui sum dbrwt if group == `j' & tobacco == 1
+	qui replace non_smk_weight = r(sum) / r(N) if group == `j'
+}
+
+sort group
+gen weighted_diff = non_smk_weight - smk_weight
+
+preserve
+collapse(mean) pscore_2 weighted_diff, by(group)
+twoway scatter weighted_diff pscore_2 , msize(vsmall) mcolor(%50) connect(i) jitter(5) xlabel(0(0.1)0.8) xtitle("Propensity Score") ytitle("gram") ///
+				ylabel(-600(100)200, angle(0)) yline(0) legend(order(1 "Difference in Birth Weight" 2 " Quadratic fit ") rows(1)) ///
+				title("Difference between Smokers and Nonsmokers" "in Average Birth Weight by the Propensity Score") || qfit weighted_diff pscore_2
+
+graph export "`output'/weight_diff.png", replace
+restore
+```
+
+\begin{figure}[H]
+\centering
+\includegraphics[width = \textwidth]{weight_diff.png}
+\end{figure}
+
+
+### 3.2 Three Different Analysis with Propensity Score
+
+First, I simply included ps_score as covariates.
+```{s}
+reg dbrwt tobacco pscore_2
+```
+
+Second, I used them to reweight the outcomes and estimated the average treatment effect.
+```{s}
+gen ate_weight     = (1/pscore_2)   if tobacco==1
+qui replace ate_weight = 1/(1-pscore_2) if tobacco==0
+reg dbrwt tobacco [pweight=ate_weight]
+```
+
+I used them to reweight the outcomes and estimated the average treatment effect on treated.
+```{s}
+gen att_weight     = 1                         if tobacco==1
+qui replace att_weight = pscore_2/(1-pscore_2) if tobacco==0
+reg dbrwt tobacco [pweight=att_weight]
+```
+
+
+Third, I made blockings on propensity score.
+I divided the data  into 100 approximately equally spaced bins based on the estimated propensity score (pscore_2).
+Then, I calculated the average treatment effect(b_tobacco) of each bin and calculate
+the total treatment effect by weighting the b_tobacco of each bin based on the size of each bin. 
+
+```{s}
+sum pscore_2
+local bandwidth = (r(max)-r(min))/100
+gen bin_num =.
+forvalues i = 1/100{
+	qui replace bin_num =`i' if pscore_2 <=`i'*`bandwidth' & bin_num ==.
+}
+qui replace bin_num = 100 if bin_num ==.
+
+sort bin_num
+gen weighted_tt =.
+
+local b_tobacco = 0
+foreach i of num 1/100 {
+	qui reg dbrwt tobacco if bin_num == `i'
+	qui replace weighted_tt = _b[tobacco]*`e(N)'/_N if bin_num == `i'
+	local b_tobacco = `b_tobacco'+ _b[tobacco]*`e(N)'/_N
+}
+
+di `b_tobacco'
+```
+As you can see from the above, the effect of smoking on birth weight is -302.29976 gram.
+
+### 3.3 Analysis of Low Birth Weight
+
+I redo the last part using an indicator for low weight birth (less than 2500 grams) as the outcome.
+I use different methods here. I calculate the size of each bin first.
+
+```{s}
+gen low_bw = dbrwt < 2500
+sum pscore_2
+gen psc_bins = autocode(pscore_2, 100, r(min), r(max))
+egen bin_size = sum(1), by(psc_bins)
+```
+
+Then, for each bin, I calculated the mean value of low weight birth for smoking and non-smoking group respectively.
+```{s}
+egen mean_low_1 = mean(low) if tobacco == 1, by(psc_bins)
+egen mean_low_0 = mean(low) if tobacco == 0, by(psc_bins)
+```
+
+After that, for each bin, to calculate the average outcome of smoking and non-smoking group, I divided mean_low_1 and mean_low_0 by the size of bin. Finally, I got the average ate_low by weighting the smoking effect of each bin based on their size.
+```{s}
+preserve
+collapse(mean) mean_low_0 mean_low_1 bin_size, by(psc_bins)
+egen N = sum(bin_size)
+egen ate_low = sum((mean_low_1 - mean_low_0)*(bin_size/N))
+di ate_low
+restore
+```
+As you can see from the above, the effect of smoking on low birth weight is 0.058.
