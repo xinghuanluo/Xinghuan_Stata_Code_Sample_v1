@@ -17,7 +17,7 @@ header-includes:
 
 ## Background
 
-[^1]: I finished this markdown file by `markstat`. The souce code is in my github repository here.
+[^1]: I finished this markdown file by `markstat`. The souce code is in my github repository [here](https://github.com/xinghuanluo/Xinghuan_Stata_Coding_Sample/blob/master/stata_coding_sample.stmd).
 
 This is a code sample extracted from my homework of econometrics class at harris.
 The questions in this homework are based heavily on the paper Almond et al. 2005.
